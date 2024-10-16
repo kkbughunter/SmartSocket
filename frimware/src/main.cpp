@@ -1,7 +1,4 @@
-/*
-Version 03:
-  * USer can controle using the local switch also.
-*/
+#define DEVICE_ID 2398;
 #include <Arduino.h>
 #if defined(ESP32) || defined(ARDUINO_RASPBERRY_PI_PICO_W)
 #include <WiFi.h>
@@ -38,17 +35,20 @@ bool wifi_conn = false;
 String ssid;
 String password;
 
-const int buttonPin = 5;     // D1
+const int resetBtn = 5; // D1 - reset - input
+const int switch1 = 4;  // D2 - Switch 1 - input
+const int light1 = 2;   // D4 - Light 1 - output
+
+String s1; // Data
+
 bool buttonState = HIGH;     // Current state of the button
 bool lastButtonState = HIGH; // Previous state of the button
 bool hotspotActive = false;  // Flag to track if the hotspot is already on
-String s1;                   // Data
 unsigned long sendDataPrevMillis = 0;
 int count = 0;
 volatile bool dataChanged = false;
-const int D4_PIN = 2;
-const int light_switch = 3;
 volatile bool state = false;
+volatile bool localUpdate = false;
 
 #define API_KEY "AIzaSyB3usuxJqpEtKSl6i8eRmYAFip_fR-T_No"
 #define DATABASE_URL "https://final-year-project-400d2-default-rtdb.asia-southeast1.firebasedatabase.app"
@@ -59,6 +59,7 @@ FirebaseData stream;
 FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
+String firebasePath = "/devices/d1/status";
 
 // Config - Function definitions
 String read_data(String file_name);
@@ -66,13 +67,14 @@ void write_data(String file_name, String data);
 void remove_data(String file_name);
 void wifi_connect(String ssid, String password);
 void wifi_mode();
-void parse_data(String data);
+void split_and_set_globally(String data);
 void enable_hotspot();
 void get_wifi_creds();
 void disable_wifi();
 void setup_device();
 void restart_device();
 void ListenD1();
+void ListenD2();
 void disable_hotspot();
 
 String read_data(String file_name)
@@ -147,6 +149,71 @@ void disable_hotspot()
   }
 }
 
+void ListenD1()
+{
+  bool currentButtonState = digitalRead(resetBtn);
+  if (currentButtonState == LOW && lastButtonState == HIGH)
+  {
+    disable_wifi();
+    remove_data("data");
+    enable_hotspot();
+    get_wifi_creds();
+    disable_hotspot();
+    restart_device();
+  }
+  lastButtonState = currentButtonState;
+}
+
+void ListenD2()
+{
+  bool current_state = digitalRead(switch1);
+  if (current_state != state)
+  {
+    localUpdate = true;
+
+    if (current_state == true)
+    {
+      Serial.println("Local Switch Updated:(" + s1 + ")");
+      digitalWrite(light1, !digitalRead(light1));
+    }
+    delay(50);
+    state = current_state;
+    localUpdate = false;
+  }
+}
+
+void ListenD2_with_Firebase()
+{
+  bool current_state = digitalRead(switch1);
+  if (current_state != state)
+  {
+    localUpdate = true;
+
+    if (current_state == true)
+    {
+
+      digitalWrite(light1, !digitalRead(light1));
+      if (s1 == "false")
+      {
+        if (Firebase.RTDB.setBool(&fbdo, firebasePath, true))
+        {
+          Serial.print("switch update: ");
+        }
+      }
+      else
+      {
+        if (Firebase.RTDB.setBool(&fbdo, firebasePath, false))
+        {
+          Serial.print("switch update: ");
+        }
+      }
+    }
+    delay(50);
+    state = current_state;
+    localUpdate = false;
+  }
+}
+
 void wifi_connect(String ssid, String password)
 {
   WiFi.mode(WIFI_STA);
@@ -154,11 +221,15 @@ void wifi_connect(String ssid, String password)
   Serial.print("Wifi Connecting #");
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(1000);
+    delay(50);
     Serial.print(".");
-    // ^ Listen for D1 pin
+
     ListenD1();
+    ListenD2();
+
+    delay(100);
   }
+
   // ^ if new SSID & password receive
   if (WiFi.status() == WL_CONNECTED)
   {
@@ -180,12 +251,12 @@ void get_wifi_creds()
   while (!conn)
   {
     conn = tcp.accept();
+    Serial.print("~");
     if (conn && conn.connected())
     {
       Serial.print("\nConnection established with ");
       Serial.println(conn.remoteIP());
     }
-    Serial.print("~");
     delay(100);
   }
 
@@ -212,7 +283,7 @@ void get_wifi_creds()
     if (msg == "END")
       break;
   }
-  parse_data(data);
+  split_and_set_globally(data);
 
   // write the new SSID and Password.
   write_data("data", ssid + "\n" + password);
@@ -229,9 +300,9 @@ void get_wifi_creds()
   }
 }
 
-void parse_data(String data)
+void split_and_set_globally(String data)
 {
-  Serial.println("Data: " + data);
+  Serial.println("Data: '" + data + "'.");
   int splitIndex = data.indexOf('\n');
   if (splitIndex == -1)
   {
@@ -247,21 +318,6 @@ void parse_data(String data)
   Serial.println("Password: " + password);
 }
 
-void ListenD1()
-{
-  bool currentButtonState = digitalRead(buttonPin);
-  if (currentButtonState == LOW && lastButtonState == HIGH)
-  {
-    disable_wifi();
-    remove_data("data");
-    enable_hotspot();
-    get_wifi_creds();
-    disable_hotspot();
-    restart_device();
-  }
-  lastButtonState = currentButtonState;
-}
-
 void setup_device()
 {
   Serial.println("\t---Setup Device START---");
@@ -270,7 +326,7 @@ void setup_device()
   if (data.length() > 5)
   {
     Serial.println("Data len: " + (String)data.length() + " so using old ssid & password.");
-    parse_data(data);
+    split_and_set_globally(data);
     wifi_connect(ssid, password);
   }
   else
@@ -292,13 +348,14 @@ void streamCallback(FirebaseStream data)
 {
 
   // print path and status of the topic
+  Serial.print("Firebase Update: ");
   Serial.print(data.streamPath().c_str());
-  Serial.printf(" - %s\n", data.payload().c_str());
+  // Serial.printf(" - %s\n", data.payload().c_str());
   // Serial.println( data.payload().c_str());
   // Serial.println( "Test");
   s1 = data.payload().c_str();
 
-  Serial.printf("Received stream payload size: %d (Max. %d)\n\n", data.payloadLength(), data.maxPayloadLength());
+  // Serial.printf("Received stream payload size: %d (Max. %d)\n\n", data.payloadLength(), data.maxPayloadLength());
   dataChanged = true;
 }
 
@@ -318,7 +375,10 @@ void setup()
   Serial.println("\n---SETUP START---");
 
   // Config - V1
-  pinMode(buttonPin, INPUT_PULLUP); // for RESET Device.
+  pinMode(resetBtn, INPUT_PULLUP); // for RESET Device.
+  pinMode(light1, OUTPUT);
+  pinMode(switch1, INPUT_PULLUP); // INPUT);
+  state = digitalRead(switch1);
 
   if (!LittleFS.begin())
   {
@@ -335,10 +395,10 @@ void setup()
   setup_device(); // Call the new setup function
 
   // Cloud - V2
-  // 2) PIN Config
-  pinMode(D4_PIN, OUTPUT);
-  pinMode(light_switch, INPUT);
-  state = digitalRead(light_switch);
+  // // 2) PIN Config
+  // pinMode(light1, OUTPUT);
+  // pinMode(switch1, INPUT_PULLUP); // INPUT);
+  // state = digitalRead(switch1);
 
   // 3) FIREBASE Config
   Serial.printf("Firebase Client v%s\n\n", FIREBASE_CLIENT_VERSION);
@@ -353,7 +413,7 @@ void setup()
   Firebase.begin(&config, &auth);
 
   // Listen to the path
-  if (!Firebase.RTDB.beginStream(&stream, "/devices/d1/status")) // change the path
+  if (!Firebase.RTDB.beginStream(&stream, firebasePath)) // change the path
     Serial.printf("sream begin error, %s\n\n", stream.errorReason().c_str());
 
   Firebase.RTDB.setStreamCallback(&stream, streamCallback, streamTimeoutCallback);
@@ -361,11 +421,12 @@ void setup()
   Serial.println("---SETUP END---");
 }
 
-volatile bool localUpdate = false; // Flag to indicate a local update
+// Flag to indicate a local update
 
 void loop()
 {
-  ListenD1();                // Monitor for D1 input
+  ListenD1();
+  ListenD2_with_Firebase();  // Monitor for D1 input
   Firebase.RTDB.runStream(); // Run the Firebase stream
 
   // Check for Firebase stream changes (Remote updates)
@@ -374,48 +435,14 @@ void loop()
     dataChanged = false;
     if (s1 == "true")
     {
-      Serial.println("S1 Switch ON (Remote)");
-      digitalWrite(D4_PIN, LOW); // Turn ON locally
+      Serial.println(" Switch ON (Remote)");
+      digitalWrite(light1, LOW); // Turn ON locally
     }
     else
     {
-      Serial.println("S1 Switch OFF (Remote)");
-      digitalWrite(D4_PIN, HIGH); // Turn OFF locally
+      Serial.println(" Switch OFF (Remote)");
+      digitalWrite(light1, HIGH); // Turn OFF locally
     }
-  }
-
-  // Local Switch Handling
-  bool current_state = digitalRead(light_switch); // Read the local switch state
-  if (current_state != state)                     // Check if the state has changed
-  {
-    localUpdate = true; // Set the flag to indicate local update
-
-    Serial.println("Local state: " + (String)current_state);
-
-    if (current_state == true)
-    {
-      Serial.println("Light old State: " + s1);
-
-      if (s1 == "false")
-      {
-        digitalWrite(D4_PIN, HIGH);
-        if (Firebase.RTDB.setBool(&fbdo, "/devices/d1/status", true))
-        {
-          Serial.println("Light New State:(" + s1 + ")");
-        }
-      }
-      else
-      {
-        digitalWrite(D4_PIN, LOW);
-        if (Firebase.RTDB.setBool(&fbdo, "/devices/d1/status", false))
-        {
-          Serial.println("Light New State:(" + s1 + ")");
-        }
-      }
-    }
-    delay(50);             // Debounce delay
-    state = current_state; // Update the local state
-    localUpdate = false;   // Reset the local update flag
   }
 
   if (!stream.httpConnected())
