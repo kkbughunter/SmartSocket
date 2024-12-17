@@ -11,19 +11,22 @@
 
 #include <configs/FirebaseConfig.h>
 
-void asyncCB(AsyncResult &aResult);
-void asyncCBJust(AsyncResult &aResult);
+void initasyncCB(AsyncResult &aResult);
+void WriterAsyncCallBack(AsyncResult &aResult);
+void ListenerCallback(AsyncResult &aResult);
 
 // Firebase Auth
 UserAuth user_auth(API_KEY, USER_EMAIL, USER_PASSWORD, 3000);
 
-//
+// Network Config
 DefaultNetwork network;
 WiFiClientSecure ssl_client1, ssl_client2;
 AsyncClientClass aClient1(ssl_client1, getNetwork(network)), aClient2(ssl_client2, getNetwork(network));
 
 FirebaseApp app;
 RealtimeDatabase Database;
+
+DatabaseOptions options;
 
 unsigned long tmo = 0;
 
@@ -53,16 +56,22 @@ void setup()
 
     // Initialize the FirebaseApp or auth task handler.
     // To deinitialize, use deinitializeApp(app).
-    initializeApp(aClient2, app, getAuth(user_auth), asyncCB, "authTask");
-    initializeApp(aClient1, app, getAuth(user_auth), asyncCB, "authTask");
+    initializeApp(aClient1, app, getAuth(user_auth), initasyncCB, "Client-1-auth-Task");
 
     // Binding the FirebaseApp for authentication handler.
     // To unbind, use Database.resetApp();
     app.getApp<RealtimeDatabase>(Database);
     Database.url(DATABASE_URL);
 
+    // This is optional to allow specific events filtering.
     Database.setSSEFilters("get,put,patch,keep-alive,cancel,auth_revoked");
-    Database.get(aClient1, "/devices/IET-a-7021", asyncCB, true, "ListenerTask");
+
+    delay(100);
+
+    options.readTimeout = 5000;
+    // Database.get(aClient2, "/devices/IET-a-7021", options);
+    Database.get(aClient2, "/devices/IET-a-7021", ListenerCallback, true ); 
+    delay(100);
 }
 
 void loop()
@@ -82,15 +91,12 @@ void loop()
         writer.create(obj2, "rand", random(10000, 30000));
         writer.join(json, 2, obj1, obj2);
 
-        Database.set<object_t>(aClient2, "/test/stream/number", json, asyncCBJust);
+        Database.set<object_t>(aClient1, "/test/stream/number", json, WriterAsyncCallBack, "Writer-Task");
     }
 }
 
-void asyncCB(AsyncResult &aResult)
+void initasyncCB(AsyncResult &aResult)
 {
-    // WARNING!
-    // Do not put your codes inside the callback.
-
     if (aResult.isEvent())
         Firebase.printf("-> Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.appEvent().message().c_str(), aResult.appEvent().code());
 
@@ -104,13 +110,17 @@ void asyncCB(AsyncResult &aResult)
         Firebase.printf("-> task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
 }
 
-void asyncCBJust(AsyncResult &aResult)
+void WriterAsyncCallBack(AsyncResult &aResult)
 {
-    // WARNING!
-    // Do not put your codes inside the callback.
 
     if (aResult.isEvent())
         Firebase.printf("--> Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.appEvent().message().c_str(), aResult.appEvent().code());
     if (aResult.available())
         Firebase.printf("--> task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
+}
+
+void ListenerCallback(AsyncResult &aResult)
+{
+    if (aResult.available())
+        Firebase.printf("---> payload: %s\n", aResult.c_str());
 }
