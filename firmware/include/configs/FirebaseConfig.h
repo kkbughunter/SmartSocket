@@ -1,9 +1,9 @@
+// The API key can be obtained from Firebase console > Project Overview > Project settings.
+#define API_KEY "AIzaSyCr4Xj-1Zf3vucafA0v3XlJQC8Im7f5LzU"
 
-
-#define API_KEY "AIzaSyDgwZKG93XVmjSwBvUfbIB96FE5gtbO_V8"
-#define DATABASE_URL "https://iet-office-tsy-e1e18-default-rtdb.asia-southeast1.firebasedatabase.app/"
-/* Firebase credentials project-1*/
-// #define API_KEY "AIzaSyBm_I3tnxfiSi8sd-jhiFNZpO5XgEj8NJ4"
-// #define DATABASE_URL "https://project1-ac5cd-default-rtdb.asia-southeast1.firebasedatabase.app/"
-#define USER_EMAIL "device@gmail.com"
+// User Email and password that already registerd or added in your project.
+#define USER_EMAIL "device@google.com"
 #define USER_PASSWORD "device"
+#define DATABASE_URL "https://project2-78261-default-rtdb.europe-west1.firebasedatabase.app/"
+
+const char *parentPath = "/devices";
