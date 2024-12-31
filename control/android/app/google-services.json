@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "819908586021",
+    "firebase_url": "https://smartsocket-e5ba4-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "smartsocket-e5ba4",
+    "storage_bucket": "smartsocket-e5ba4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:819908586021:android:181d260b782a4a1525edcc",
+        "android_client_info": {
+          "package_name": "com.srekntest.control"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDdJA5aEXqdV3EGt4_kDy5BrSLbG5CaP44"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
